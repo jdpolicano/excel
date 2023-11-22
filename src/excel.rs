@@ -78,12 +78,13 @@ impl Field {
 }
 
 pub struct Excel {
-    src: String,
+    src: Vec<char>,
     pub rows: Vec<Vec<Field>>,
 }
 
 impl Excel {
-    pub fn new(src: String) -> Self {
+    pub fn new(string_src: String) -> Self {
+        let src: Vec<char> = string_src.chars().collect();
         let mut parser = Parser::new(&src);
         let csv = parser.parse();
         

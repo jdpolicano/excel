@@ -16,12 +16,13 @@ Below is the rough sketch of the grammar definitions that are (hopefully) implem
 | `Factor`       | `Primary \| Factor '*' Primary \| Factor '/' Primary`           |
 | `Primary`      | `Primitive \| CellRef \| '(' Expression ')' \| Function`        |
 | `Primitive`    | `Number \| String \| Boolean`                                   |
-| `Function`     | `FunctionName '(' [ Expression { ',' Expression } ] ')'`        |
+| `Function`     | `FunctionName '(' [ Expression { ',' Expression } ] \| CellRange ')'`        |
 | `FunctionName` | `'SUM' \| 'AVERAGE' \| 'MAX' \| 'MIN' \| ... \| 'IF' \| ...`    |
 | `Operator`     | `'+' \| '-' \| '*' \| '/' \| '^' \| '&' \| '=' \| '<>' \| ...`  |
 | `Number`       | `[0-9]+ ('.' [0-9]+)?`                                          |
 | `String`       | `'"' [^"]* '"'`                                                 |
 | `Boolean`      | `'TRUE' \| 'FALSE'`                                             |
+| `CellRange`    | `CellRef ':' CellRef`                                           |
 | `CellRef`      | `ColumnRef RowRef`                                              |
 | `ColumnRef`    | `[A-Z]+`                                                        |
 | `RowRef`       | `[0-9]+`                                                        |

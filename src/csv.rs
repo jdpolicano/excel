@@ -1,61 +1,50 @@
+use std::fs::{read_to_string, File};
+use std::io::{BufWriter, Write};
+use std::fmt;
+
 #[derive(Debug)]
-pub enum Token<'a> {
-    Value(&'a str), // a full field
+enum Token<'a> {
+    Value(&'a [char]), // a full field
     Delimiter, // comma
     Newline, // "\n" | "\r\n"
     TextQualifier, // '"'
-    WhiteSpace, // whitespace not inside a text qualified string...
+    WhiteSpace,// whitespace not inside a text qualified string...
     Escaped, // '""' for quotations inside a qualified string.
     EndOfFile,
 }
 
 
 pub struct Tokenizer<'a> {
-    view: &'a str,
+    view: &'a [char],
 }
 
 // this turned into more of a parse3r than a tokenizer...
 impl<'a> Tokenizer<'a> {
-    pub fn new(view: &'a str) -> Self {
+    pub fn new(view: &'a [char]) -> Self {
         Self {
             view,
         }
     }
 
-    fn skip(&mut self) {
-        let mut char_idx = self.view.char_indices();
-        let next_idx = char_idx.nth(1).map_or(self.view.len(), |(idx, _)| idx);
-        self.view = &self.view[next_idx..];
+    fn skip(&mut self, n: usize) {
+        self.view = &self.view[n.min(self.view.len())..];
     }
 
-    fn skip_and_slice(&mut self, nth: usize) -> &'a str {
-        let mut char_idx = self.view.char_indices();
-        let next_idx = char_idx.nth(nth).map_or(self.view.len(), |(idx, _)| idx);
-        let slice = &self.view[0..next_idx];
-        self.view = &self.view[next_idx..];
-        slice
+    fn peek(&self) -> Option<&char> {
+        self.view.get(0)
     }
 
-    fn nth_index(&mut self, n: usize) -> usize {
-        let mut char_idx = self.view.char_indices();
-        char_idx.nth(n).map_or(self.view.len(), |(idx, _)| idx) 
-    }
-
-    fn peek(&self) -> Option<char> {
-        self.view.chars().next()
-    }
-
-    fn nth_is(&self, idx: usize, cmp: char) -> bool {
-        if let Some(c) = self.view.chars().nth(idx) {
-            return c == cmp;
+    fn next_is(&self, cmp: char) -> bool {
+        if let Some(c) = self.peek() {
+            return *c == cmp;
         }
         false
     }
 
-    fn nth_is_one_of(&self, idx: usize, sp_cmp: &[char]) -> bool {
-        if let Some(c) = self.view.chars().nth(idx) {
+    fn next_is_one_of(&self, sp_cmp: &[char]) -> bool {
+        if let Some(c) = self.peek() {
             for cmp in sp_cmp {
-                if c == *cmp {
+                if *c == *cmp {
                     return true
                 }
             }
@@ -76,43 +65,45 @@ impl<'a> Tokenizer<'a> {
         if let Some(c) = self.peek() {
             match c {
                 '"' => {
-                    self.skip();
-                    if self.nth_is(0, '"') {
-                        self.skip();
+                    self.skip(1);
+                    if self.next_is('"') {
+                        self.skip(1);
                         return Token::Escaped;
                     }
-                    return Token::TextQualifier;
-                },
+
+                    return Token::TextQualifier
+                }
     
                 ',' => {
-                    self.skip();
+                    self.skip(1);
                     return Token::Delimiter; 
-                },
+                }
     
                 ' ' => {
-                    self.skip();
+                    self.skip(1);
                     return Token::WhiteSpace; 
                 }
     
     
-                '\r' if self.nth_is(1, '\n') => {
-                    self.skip();
-                    self.skip();
+                '\r'  => {
+                    self.skip(2);
                     return Token::Newline;
                 }
     
                 '\n' => {
-                    self.skip();
-                    return Token::Newline;
+                    self.skip(1);
+                    return Token::Newline
                 }
     
                 _ => {
+                    let tmp = &self.view[0..];
                     let mut idx = 0;
                     let sp_c = ['\n', '\r', ',', '"', ' '];
-                    while !self.nth_is_one_of(idx, &sp_c) && idx < self.view.len() {
+                    while !self.next_is_one_of(&sp_c) {
+                        self.skip(1);
                         idx += 1;
                     }
-                    return Token::Value(self.skip_and_slice(idx));
+                    return Token::Value(&tmp[0..idx]);
                 }
             }
         }
@@ -121,43 +112,49 @@ impl<'a> Tokenizer<'a> {
     }
 }
 
-
 pub struct Parser<'a> {
     tokenizer: Tokenizer<'a>
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(source: &'a str) -> Self {
+    pub fn new(source: &'a [char]) -> Self {
         Self {
             tokenizer: Tokenizer::new(source)
         }
     }
 
     pub fn parse(&mut self) -> Vec<Vec<String>> {
+        let mut max_field_size = 0;
+        let mut max_row_width = 0;
         let mut rows = Vec::new();
         let mut current_row = Vec::new();
         let mut current_field = String::new();
         let mut in_qualifier = false;
-    
+
         while let token = self.tokenizer.get_csv_token() {
             match token {
-                Token::Value(v) => {
-                    current_field.push_str(v);
+                Token::Value(val) => {
+                    for c in val {
+                        current_field.push(*c);
+                    }
                 }
                 Token::Delimiter => {
                     if !in_qualifier {
+                        max_field_size = max_field_size.max(current_field.len());
                         current_row.push(current_field);
-                        current_field = String::new();
+                        current_field = String::with_capacity(max_field_size);
                     } else {
                         current_field.push(',');
                     }
                 }
                 Token::Newline => {
                     if !in_qualifier {
+                        max_field_size = max_field_size.max(current_field.len());
+                        max_row_width = max_row_width.max(current_row.len());
                         current_row.push(current_field);
                         rows.push(current_row);
-                        current_row = Vec::new();
-                        current_field = String::new()
+                        current_row = Vec::with_capacity(max_row_width);
+                        current_field = String::with_capacity(max_field_size);
                     } else {
                         current_field.push('\n');
                     }
@@ -194,3 +191,4 @@ impl<'a> Parser<'a> {
         rows
     }
 }
+
